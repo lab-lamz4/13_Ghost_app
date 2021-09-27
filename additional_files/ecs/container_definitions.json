@@ -1,0 +1,45 @@
+[
+
+            {
+                "essential": true,
+                "name": "ghost-app",
+                "image": "${image}:4-alpine",
+                "memory": 1024,
+                "cpu": 256,
+                "secrets": [{
+                    "name": "database__connection__password",
+                    "valueFrom": "${ssm_arn}"
+                  }],
+                "environment": [
+                    {"name": "database__client", "value": "mysql"},
+                    {"name": "database__connection__host", "value": "${db_url_tpl}"},
+                    {"name": "database__connection__database", "value": "gh_db"},
+                    {"name": "database__connection__user", "value": "ghost"},
+                    {"name": "server__host", "value": "0.0.0.0"},
+                    {"name": "server__port", "value": "2368"},
+                    {"name": "paths__contentPath", "value": "/var/lib/ghost/content"}
+                ],
+                "mountPoints": [
+                    {
+                        "sourceVolume": "web-storage",
+                        "containerPath": "/var/lib/ghost/content",
+                        "readOnly": false
+                    }
+                ],
+                "portMappings": [
+                    {
+                        "hostPort": 2368,
+                        "containerPort": 2368,
+                        "protocol": "tcp"
+                    }
+                ],
+                "logConfiguration": {
+                    "logDriver": "awslogs",
+                    "options": {
+                        "awslogs-group": "container-logs",
+                        "awslogs-region": "us-east-1",
+                        "awslogs-stream-prefix": "ecs"
+                    }
+                }
+            }
+]

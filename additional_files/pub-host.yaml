@@ -1,0 +1,63 @@
+#cloud-config
+timezone: Europe/Moscow
+users:
+  - name: epam_leodorov
+    groups: sudo
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh-authorized-keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCnNKtufOi23ESMZPLKU6p6nS3tnFB+13LaSplCGlI2HFzLexwU9hnWKFixHeavRi0gFv1y1Xy0EWZ1dM/C8qAv4PPmqakfU8M2pEXq2kKaoz3MDJg8vBS01pSB77h+hH0cK6EmQql5grWttgydm/byJb3YKT3AJz+5jeUIX+Xdm3j2O6+SyYFjArz+LJTybIAfAUpEs9AEd7hZh70QY7ZUYfVIbc2fmgyY3mYWVKKTEKGHWp3dlQQajYEHTl0ykaiC11bjLxukvHHm6dufQ/ambZzNxgHeI4brawZnrrUbJvXOg0sGmwBfGYRCSuRQuzbL6BqTqm7mwLHvFbIVjWGb
+packages:
+  - dnsutils
+  - tree
+write_files:
+  - content: |
+      #!/bin/bash -xe
+      export HOME="/root"
+      export SSM_DB_PASSWORD="/ghost/dbpassw"
+      export DB_URL=${db_url_tpl}
+      export DB_USER="ghost"
+      export DB_NAME="gh_db"
+
+      export REGION=$(/usr/bin/curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone | sed 's/[a-z]$//')
+      export DB_PASSWORD=$(aws ssm get-parameter --name $SSM_DB_PASSWORD --query Parameter.Value --with-decryption --region $REGION --output text)
+      export EFS_ID=$(aws efs describe-file-systems --query 'FileSystems[?Name==`efs_ghost`].FileSystemId' --region $REGION --output text)
+
+      ### EFS mount
+      sudo mount -t efs -o tls $EFS_ID:/ /var/lib/ghost/content
+      cd /root/ghost
+      rm -rf config.production.json
+
+      cat << EOF >> config.production.json
+      {
+          "database": {
+                  "client": "mysql",
+                  "connection": {
+                          "host": "$DB_URL",
+                          "port": 3306,
+                          "user": "$DB_USER",
+                          "password": "$DB_PASSWORD",
+                          "database": "$DB_NAME"
+                  }
+          },
+          "server": {
+                  "host": "0.0.0.0",
+                  "port": "2368"
+          },
+          "paths": {
+              "contentPath": "/var/lib/ghost/content"
+          }
+      }
+      EOF
+
+      rsync -axvr --ignore-existing content/ /var/lib/ghost/content || true
+      chmod 755 -R /var/lib/ghost
+
+      npm install
+
+      NODE_ENV=production pm2 start index.js --name "ghost" -i max
+    path: /root/start_script.sh
+    permissions: '0755'
+runcmd:
+  - [/root/start_script.sh]
+
